@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/lucas-saldanha-werneck/op-secrets/actions/workflows/test.yml/badge.svg)](https://github.com/lucas-saldanha-werneck/op-secrets/actions/workflows/test.yml)
 [![License](https://img.shields.io/github/license/lucas-saldanha-werneck/op-secrets)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.7.0-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.7.1-blue)](CHANGELOG.md)
 [![Skill score](https://img.shields.io/badge/skill%20score-98.8%20A-brightgreen)](https://github.com/NVIDIA/SkillEvaluator)
 [![plugin score (proposal)](https://img.shields.io/badge/plugin%20score%20(proposal)-100.0%20A-brightgreen)](https://github.com/NVIDIA/SkillEvaluator/issues/508)
 

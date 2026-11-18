@@ -1,7 +1,7 @@
 {
   "name": "op-secrets",
   "description": "Save and load secrets through 1Password without the values entering the chat.",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "author": {
     "name": "Lucas Saldanha Werneck",
     "url": "https://github.com/lucas-saldanha-werneck"

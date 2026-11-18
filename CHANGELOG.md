@@ -3,6 +3,15 @@
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions: [Semantic Versioning](https://semver.org/). Release notes and downloadable assets: [GitHub Releases](https://github.com/lucas-saldanha-werneck/op-secrets/releases).
 
+## [0.7.1] - 2026-11-18
+
+### Fixed
+- The guard now blocks process listings that print full command lines: `pgrep -f` combined with `-l`/`-a` (`pgrep -fl`),
+  `ps` with the environment flag (`ps eww`, `ps -E`), `ps aux`/`ps ax`/`ps -ef`/`-f`, and `ps -o command|args|cmd`.
+  On macOS a process that rewrites its title (e.g. `npm exec`) shows its environment after the arguments, so
+  `pgrep -fl` leaked the secrets injected by op-env into the transcript. Still allowed: `pgrep -f pattern` and
+  `pgrep -fq` (PIDs only), `ps -p PID -o pid,etime,comm`, and anything piped to `wc`/`grep -c`.
+
 ## [0.7.0] - 2026-11-13
 
 ### Changed
