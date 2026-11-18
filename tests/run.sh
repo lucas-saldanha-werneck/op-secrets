@@ -66,6 +66,30 @@ expect block bash "$(b '"export -p"')"
 expect block bash "$(b '"declare -x"')"
 expect block bash "$(b '"set"')"
 expect block bash "$(b '"cat /proc/self/environ"')"
+expect block bash "$(b '"pgrep -fl \"lavish-axi poll\""')"
+expect block bash "$(b '"pgrep -fa lavish-axi"')"
+expect block bash "$(b '"pgrep -f -l lavish-axi"')"
+expect block bash "$(b '"pgrep -lf node | head"')"
+expect block bash "$(b '"pgrep --full --list-full node"')"
+expect block bash "$(b '"ps eww -p 1234"')"
+expect block bash "$(b '"ps -E -p 1234"')"
+expect block bash "$(b '"ps aux | grep lavish"')"
+expect block bash "$(b '"ps ax"')"
+expect block bash "$(b '"ps -ef"')"
+expect block bash "$(b '"ps -p 1234 -o command="')"
+expect block bash "$(b '"ps -p 1234 -o pid,args"')"
+expect block bash "$(b '"ps -axo pid,command | grep node"')"
+expect allow bash "$(b '"pgrep -f lavish-axi"')"
+expect allow bash "$(b '"pgrep -fq lavish-axi && echo up"')"
+expect allow bash "$(b '"pgrep -l lavish"')"
+expect allow bash "$(b '"pgrep -fl node | wc -l"')"
+expect allow bash "$(b '"pgrep node"')"
+expect allow bash "$(b '"ps -p 1234 -o pid,etime"')"
+expect allow bash "$(b '"ps -p 1234 -o pid,etime,comm"')"
+expect allow bash "$(b '"ps -o pid= -p 1234"')"
+expect allow bash "$(b '"ps"')"
+expect allow bash "$(b '"ps -p 1234"')"
+expect allow bash "$(b '"ps -axo pid,comm"')"
 expect block bash "$(b '"python3 -c \"import os;print(os.environ)\""')"
 expect block bash "$(b '"node -e \"console.log(process.env)\""')"
 expect block bash "$(b '"echo $APIFY_TOKEN"')"
@@ -191,7 +215,7 @@ xb allow <<'X'
 grep -nE 'env\.tpl|OP_ENV_|op run|op read' ~/.local/bin/op-env
 X
 xb allow <<'X'
-ps -eo pid,command | grep -E 'audit.sh|op item get' | grep -v grep
+ps -eo pid,comm | grep -E 'audit.sh|op item get' | grep -v grep
 X
 xb allow <<'X'
 agent-browser --help | grep -iE "^  (fill|type|click|select|set)" | head

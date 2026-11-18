@@ -520,6 +520,40 @@ GREP_HINT = (" To find where a key is defined, list the files (grep -rl / Grep o
              "exclude secret files (--exclude='.env*', rg -g '!.env*'), or limit the search (--include='*.py').")
 
 
+PROC_HINT = ("Use `pgrep -f <pattern>` (PIDs only), `pgrep -q`, or `ps -p <pid> -o pid,etime,comm` "
+             "(command NAME, no arguments).")
+
+
+def proc_listing_leaks(c, args):
+    """pgrep/ps forms that print full command lines (or the environment)."""
+    longs = {a.split("=")[0] for a in args if a.startswith("--")}
+    fl = short_flags(args)
+    if c == "pgrep":   # -f only matches; it prints the line when combined with -l (macOS) or -a
+        return ("f" in fl or "--full" in longs) and ("l" in fl or "a" in fl or {"--list-full", "--list-name"} & longs) \
+            or "--list-full" in longs
+    # ps: BSD bundles without a dash (aux, eww, ax), then -E/-f/-F, then -o/-O fields
+    first = args[0] if args else ""
+    bsd = first if re.match(r"^[A-Za-z]+$", first) else ""   # only the first word can be a BSD bundle
+    fields = []
+    for k, a in enumerate(args):
+        if (a in ("-o", "-O", "--format") or re.match(r"^-[A-Za-z]*[oO]$", a)):   # also -axo, -eo
+            fields += re.split(r"[,\s]+", args[k + 1]) if k + 1 < len(args) else []
+        elif re.match(r"^-[oO].+", a):
+            fields += re.split(r"[,\s]+", a[2:])
+        elif a.startswith("--format="):
+            fields += re.split(r"[,\s]+", a[9:])
+    names = {f.split("=")[0].lower() for f in fields if f}
+    if "e" in bsd or "E" in fl:
+        return True   # environment after the command
+    if names & {"command", "args", "cmd"}:
+        return True
+    if "f" in fl or "F" in fl:
+        return True   # -ef, -f: CMD column with arguments
+    if not fields and bsd and set(bsd) & set("uaxwUj"):
+        return True   # ps aux, ps ax: COMMAND column with arguments
+    return False
+
+
 def ev_bash(d):
     cmd = (d.get("tool_input") or {}).get("command", "") or ""
     v = View(cmd)
@@ -554,6 +588,11 @@ def ev_bash(d):
             if c == "printenv" and operands and not masked and \
                     (strip_wrappers(stages[k], v)[1] or any("$" in a or SECRET_NAME.search(a) for a in operands)):
                 block("printing a secret env var leaks it. Use it inside a command instead." + CHECK_HINT)
+            # process listings with full command lines: on macOS a process that rewrote its title (npm exec ...)
+            # shows its environment after the args, so the secrets injected by op-env land in the transcript
+            if c in ("pgrep", "ps") and not masked and proc_listing_leaks(c, args):
+                block("listing processes with their full command line can print the environment (secrets) of "
+                      "processes that rewrite their title, e.g. npm exec. " + PROC_HINT)
             if (c == "set" and not args) or (c == "export" and args[:1] == ["-p"]) or \
                     (c in ("declare", "typeset") and set(short_flags(args)) & set("xp") and not operands) or \
                     (c == "compgen" and "v" in short_flags(args)):
