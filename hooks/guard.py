@@ -429,7 +429,8 @@ def ev_prompt(d):
                        "outside the chat. To send anyway, start the message with #allow-secret" % why})
 
 
-SECRET_VAR = r"\$\{?[A-Za-z_]*(?:TOKEN|KEY|SECRET|PASS|PASSWORD|PASSWD|CREDENTIAL|CRED|AUTH)[A-Za-z0-9_]*\}?"
+# ${NAME:+text} prints text only when NAME is set (a set-test), never the value: not a leak
+SECRET_VAR = r"\$\{?(?![A-Za-z0-9_]*:\+)[A-Za-z_]*(?:TOKEN|KEY|SECRET|PASS|PASSWORD|PASSWD|CREDENTIAL|CRED|AUTH)[A-Za-z0-9_]*\}?"
 CHECK_HINT = " To check a secret is set without printing it: op-env -- sh -c '[ -n \"$VAR\" ] && echo set'."
 # run on the shell VIEW (quoted patterns and data heredocs removed)
 VIEW_LEAKS = [
@@ -465,6 +466,19 @@ GREP_VALUE_OPTS = {"-e", "-f", "-m", "-A", "-B", "-C", "-d", "-D", "-g", "-t", "
 PRINTERS = {"cat", "head", "tail", "less", "more", "tee", "tr", "cut", "sed", "awk", "xxd", "od", "hexdump", "base64",
             "rev", "fold", "strings", "grep", "pbcopy"}
 SCREEN = re.compile(r"/dev/(?:stdout|stderr|tty|fd/)")
+
+
+SOURCE_DIRS = {"src", "lib", "docs", "doc", "test", "tests", "spec", "server", "client", "app", "apps", "pages",
+               "components", "packages", "scripts", "hooks", "skills", "bin", "templates", "demo", "public", "cmd",
+               "internal", "pkg", "include", "evals"}
+
+
+def is_source_dir(p: str) -> bool:
+    """A named source folder ('src', 'docs/', 'a/b/lib', 'src/*'): never a home, root, '.' or an .env path."""
+    if re.search(r"\.env|\$|\.\.", p) or p in (".", "./", "~", "~/", "/"):
+        return False
+    last = [x for x in re.split(r"/+", p.rstrip("/*")) if x not in ("", ".")]
+    return bool(last) and last[-1] in SOURCE_DIRS
 
 
 def grep_may_print_secret_file(c, args) -> bool:
@@ -512,6 +526,8 @@ def grep_may_print_secret_file(c, args) -> bool:
         return False
     if operands and all(re.search(r"[^/]\.\w+$", p) for p in operands):
         return False   # named files, not folders
+    if operands and all(is_source_dir(p) for p in operands):
+        return False   # source folders (src, docs, lib...), not a home, root or config folder
     ci = "i" in fl or "--ignore-case" in opts
     return any(re.search(KEYISH, p, re.I if ci else 0) for p in pats)
 
@@ -525,7 +541,17 @@ PROC_HINT = ("Use `pgrep -f <pattern>` (PIDs only), `pgrep -q`, or `ps -p <pid> 
 
 
 def proc_listing_leaks(c, args):
-    """pgrep/ps forms that print full command lines (or the environment)."""
+    """Process listings that print the ENVIRONMENT of other processes (ps e / -E / eww).
+    Plain command lines (pgrep -fl, ps aux, ps -ef, ps -o command) are allowed: existence checks."""
+    if c == "pgrep":
+        return False
+    first = args[0] if args else ""
+    bsd = first if re.match(r"^[A-Za-z]+$", first) else ""   # only the first word can be a BSD bundle
+    return "e" in bsd or "E" in short_flags(args)
+
+
+def proc_prints_cmdline(c, args):
+    """pgrep/ps forms that print full command lines (the title of a process that rewrote it may carry its env)."""
     longs = {a.split("=")[0] for a in args if a.startswith("--")}
     fl = short_flags(args)
     if c == "pgrep":   # -f only matches; it prints the line when combined with -l (macOS) or -a
@@ -543,8 +569,6 @@ def proc_listing_leaks(c, args):
         elif a.startswith("--format="):
             fields += re.split(r"[,\s]+", a[9:])
     names = {f.split("=")[0].lower() for f in fields if f}
-    if "e" in bsd or "E" in fl:
-        return True   # environment after the command
     if names & {"command", "args", "cmd"}:
         return True
     if "f" in fl or "F" in fl:
@@ -554,9 +578,21 @@ def proc_listing_leaks(c, args):
     return False
 
 
+# Command lines are allowed but redacted: a process that rewrites its title (npm exec, node process.title) shows its real
+# environment after the arguments. The guard wraps the command so every output line is cut at the first NAME=value token.
+REDACT_SED = "s/[[:space:]][A-Za-z_][A-Za-z0-9_]*=.*$/ [env hidden]/"
+REDACT_MARK = "[env hidden]"
+
+
+def redact_wrap(cmd: str) -> str:
+    """The whole command, run so that its output passes through the redactor (pipefail keeps the exit status)."""
+    return "( set -o pipefail; { %s\n} | sed '%s' )" % (cmd, REDACT_SED)
+
+
 def ev_bash(d):
     cmd = (d.get("tool_input") or {}).get("command", "") or ""
     v = View(cmd)
+    redact = False
     for pat, msg in VIEW_LEAKS:
         if re.search(pat, v.text, re.I | re.M):
             block(msg)
@@ -590,9 +626,10 @@ def ev_bash(d):
                 block("printing a secret env var leaks it. Use it inside a command instead." + CHECK_HINT)
             # process listings with full command lines: on macOS a process that rewrote its title (npm exec ...)
             # shows its environment after the args, so the secrets injected by op-env land in the transcript
+            if c in ("pgrep", "ps") and not masked and not proc_listing_leaks(c, args) and proc_prints_cmdline(c, args):
+                redact = True
             if c in ("pgrep", "ps") and not masked and proc_listing_leaks(c, args):
-                block("listing processes with their full command line can print the environment (secrets) of "
-                      "processes that rewrite their title, e.g. npm exec. " + PROC_HINT)
+                block("`ps e`/`ps -E`/`ps eww` print the environment (secrets) of other processes. " + PROC_HINT)
             if (c == "set" and not args) or (c == "export" and args[:1] == ["-p"]) or \
                     (c in ("declare", "typeset") and set(short_flags(args)) & set("xp") and not operands) or \
                     (c == "compgen" and "v" in short_flags(args)):
@@ -652,6 +689,12 @@ def ev_bash(d):
     if why:
         block("the command contains %s. A literal secret on the command line ends up in the transcript. "
               "Save it with `op-store <title>` and use $VAR / op:// instead." % why)
+    if redact and REDACT_MARK not in cmd:
+        ti = dict(d.get("tool_input") or {})
+        ti["command"] = redact_wrap(cmd)
+        out({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "allow",
+                                    "permissionDecisionReason": "process listing: environment-like tokens are redacted",
+                                    "updatedInput": ti}})
 
 
 TAMPER_PATH = re.compile(r"(?:claude-1password|Claude-1Password|op-secrets)[\\/].*hooks[\\/]|[\\/]hooks[\\/]guard\.py$|[\\/]hooks\.json$", re.I)
