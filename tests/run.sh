@@ -780,7 +780,7 @@ if command -v node >/dev/null 2>&1; then
 else
   echo "  skip  node not installed"
 fi
-cmd=$(rewrite "pgrep -fl nothing-here-xyz | head -3"); bash -c "$cmd" >/dev/null 2>&1; rc=$?
+cmd=$(rewrite "pgrep -fl nothing-here-xy[z] | head -3"); bash -c "$cmd" >/dev/null 2>&1; rc=$?
 if [ $rc -ne 0 ]; then pass=$((pass+1)); echo "  ok    exit status kept (pgrep found nothing: $rc)"; else fail=$((fail+1)); echo "  FAIL  exit status lost"; fi
 cmd=$(rewrite "echo pid; pgrep -fl nothing-here-xyz")
 printf '%s' "$cmd" | grep -q 'env hidden' && { pass=$((pass+1)); echo "  ok    command wrapped, original kept"; } || { fail=$((fail+1)); echo "  FAIL  wrap"; }
