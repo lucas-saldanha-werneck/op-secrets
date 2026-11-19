@@ -783,7 +783,7 @@ fi
 cmd=$(rewrite "pgrep -fl nothing-here-xy[z] | head -3"); bash -c "$cmd" >/dev/null 2>&1; rc=$?
 if [ $rc -ne 0 ]; then pass=$((pass+1)); echo "  ok    exit status kept (pgrep found nothing: $rc)"; else fail=$((fail+1)); echo "  FAIL  exit status lost"; fi
 # secrets passed as flags, headers, user:pass and URL credentials are hidden; ordinary args are kept
-redact_line() { cmd=$(rewrite "pgrep -fl nothing-here-xy[z]; cat"); printf '%s\n' "$1" | bash -c "$cmd" 2>&1; }
+redact_line() { cmd=$(rewrite "pgrep -fl nothing-here-xy[z]; cat"); printf '%s\n' "$1" | bash -c "$cmd" 2>/dev/null; }
 check_hidden() { out=$(redact_line "$1"); if printf '%s' "$out" | grep -qE 'SEKRIT99|ab1x'; then fail=$((fail+1)); echo "  FAIL  secret leaked: $out"; else pass=$((pass+1)); echo "  ok    hidden: $out"; fi; }
 check_kept() { out=$(redact_line "$1"); if [ "$out" = "$1" ]; then pass=$((pass+1)); echo "  ok    kept: $out"; else fail=$((fail+1)); echo "  FAIL  arg hidden by mistake: $out"; fi; }
 check_hidden 'npm exec x --token SEKRIT99'
