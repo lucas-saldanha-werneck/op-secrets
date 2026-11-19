@@ -66,19 +66,24 @@ expect block bash "$(b '"export -p"')"
 expect block bash "$(b '"declare -x"')"
 expect block bash "$(b '"set"')"
 expect block bash "$(b '"cat /proc/self/environ"')"
-expect block bash "$(b '"pgrep -fl \"lavish-axi poll\""')"
-expect block bash "$(b '"pgrep -fa lavish-axi"')"
-expect block bash "$(b '"pgrep -f -l lavish-axi"')"
-expect block bash "$(b '"pgrep -lf node | head"')"
-expect block bash "$(b '"pgrep --full --list-full node"')"
+expect allow bash "$(b '"pgrep -fl \"lavish-axi poll\""')"
+expect allow bash "$(b '"pgrep -fa lavish-axi"')"
+expect allow bash "$(b '"pgrep -f -l lavish-axi"')"
+expect allow bash "$(b '"pgrep -lf node | head"')"
+expect allow bash "$(b '"pgrep --full --list-full node"')"
 expect block bash "$(b '"ps eww -p 1234"')"
 expect block bash "$(b '"ps -E -p 1234"')"
-expect block bash "$(b '"ps aux | grep lavish"')"
-expect block bash "$(b '"ps ax"')"
-expect block bash "$(b '"ps -ef"')"
-expect block bash "$(b '"ps -p 1234 -o command="')"
-expect block bash "$(b '"ps -p 1234 -o pid,args"')"
-expect block bash "$(b '"ps -axo pid,command | grep node"')"
+expect block bash "$(b '"ps axe | head"')"
+expect block bash "$(b '"ps eww -p 1234 | cut -c1-80"')"
+expect allow bash "$(b '"ps aux | grep -i playwright | grep -v grep | head -3"')"
+expect allow bash "$(b '"pgrep -fl vitest | cut -c1-120"')"
+expect allow bash "$(b '"ps -ax -o pid,etime,command | awk \"/node/\" | head"')"
+expect allow bash "$(b '"ps aux | grep lavish"')"
+expect allow bash "$(b '"ps ax"')"
+expect allow bash "$(b '"ps -ef"')"
+expect allow bash "$(b '"ps -p 1234 -o command="')"
+expect allow bash "$(b '"ps -p 1234 -o pid,args"')"
+expect allow bash "$(b '"ps -axo pid,command | grep node"')"
 expect allow bash "$(b '"pgrep -f lavish-axi"')"
 expect allow bash "$(b '"pgrep -fq lavish-axi && echo up"')"
 expect allow bash "$(b '"pgrep -l lavish"')"
@@ -126,6 +131,16 @@ expect block bash "$(b '"op-env python3 -c \"import os; print(os.environ)\""')"
 expect block bash "$(b '"op-env node -e \"console.log(process.env)\""')"
 expect block bash "$(b '"sudo op-env env"')"
 expect block bash "$(b '"op-env sh -c \"echo $OPENAI_API_KEY\""')"
+expect allow bash "$(b '"echo \"env: ${ANTHROPIC_API_KEY:+set}\""')"
+expect allow bash "$(b '"echo SA=${OP_SERVICE_ACCOUNT_TOKEN:+set}"')"
+expect block bash "$(b '"echo ${APIFY_TOKEN:-fallback}"')"
+expect block bash "$(b '"echo ${APIFY_TOKEN:+x}$APIFY_TOKEN"')"
+expect allow bash "$(b '"grep -rn -i -E \"oauth|CLAUDE_CODE_\" docs src | head"')"
+expect allow bash "$(b '"cd /repo && grep -rn \"API_KEY\" lib/ server/ bin/"')"
+expect block bash "$(b '"grep -rn API_KEY ~"')"
+expect block bash "$(b '"grep -rn API_KEY / 2>/dev/null"')"
+expect block bash "$(b '"grep -rn API_KEY src .env"')"
+expect block bash "$(b '"grep -rn API_KEY ."')"
 expect allow bash "$(b '"op-env -- sh -c '"'"'[ -n \"$APIFY_TOKEN\" ] && echo set'"'"'"')"
 expect allow bash "$(b '"op-env -- sh -c \"[ -n \\\"$APIFY_TOKEN\\\" ] && echo set\""')"
 expect allow bash "$(b '"op-env claude"')"
@@ -741,5 +756,36 @@ else pass=$((pass+1)); echo "  ok    setup recipes feed the token to security th
 if grep -q 'read_items,write_items' "$HERE/bin/op-env"; then pass=$((pass+1)); echo "  ok    op-env recipe grants write_items"; else fail=$((fail+1)); echo "  FAIL  op-env recipe is read-only"; fi
 
 echo
+echo "v0.7.2 process listings: allowed, but the output is redacted (title-rewriting processes show their env)"
+rewrite() { printf '%s' "$(b "\"$1\"")" | "$PY" "$G" bash | "$PY" -c 'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"]["updatedInput"]["command"])'; }
+if command -v node >/dev/null 2>&1; then
+  # dummy values only: the child gets a minimal environment, never the real one
+  env -i FOO_TEST=dummy123 PATH="$PATH" node -e 'process.title="npm exec rtest FOO_TEST="+process.env.FOO_TEST+" X=1";setTimeout(()=>{},15000)' >/dev/null 2>&1 &
+  NODEPID=$!
+  sleep 1
+  raw=$(pgrep -fl 'npm exe[c] rtest' 2>/dev/null)
+  if printf '%s' "$raw" | grep -q dummy123; then
+    cmd=$(rewrite "pgrep -fl 'npm exe[c] rtest' | head -3")
+    red=$(bash -c "$cmd" 2>&1)
+    if printf '%s' "$red" | grep -q dummy123; then fail=$((fail+1)); echo "  FAIL  redactor leaked the dummy env: $red"
+    elif printf '%s' "$red" | grep -q 'npm exec rtest.*\[env hidden\]'; then pass=$((pass+1)); echo "  ok    pgrep -fl on a title-rewritten process: env hidden, args kept"
+    else fail=$((fail+1)); echo "  FAIL  redactor output unexpected: $red"; fi
+    cmd=$(rewrite "ps -ax -o pid,command | grep 'npm exe[c] rtest' | grep -v grep")
+    red=$(bash -c "$cmd" 2>&1)
+    if printf '%s' "$red" | grep -q dummy123; then fail=$((fail+1)); echo "  FAIL  ps redactor leaked the dummy env: $red"; else pass=$((pass+1)); echo "  ok    ps -o command on a title-rewritten process: env hidden"; fi
+  else
+    echo "  skip  this system does not show a rewritten title in pgrep -fl"
+  fi
+  kill $NODEPID 2>/dev/null; wait $NODEPID 2>/dev/null
+else
+  echo "  skip  node not installed"
+fi
+cmd=$(rewrite "pgrep -fl nothing-here-xyz | head -3"); bash -c "$cmd" >/dev/null 2>&1; rc=$?
+if [ $rc -ne 0 ]; then pass=$((pass+1)); echo "  ok    exit status kept (pgrep found nothing: $rc)"; else fail=$((fail+1)); echo "  FAIL  exit status lost"; fi
+cmd=$(rewrite "echo pid; pgrep -fl nothing-here-xyz")
+printf '%s' "$cmd" | grep -q 'env hidden' && { pass=$((pass+1)); echo "  ok    command wrapped, original kept"; } || { fail=$((fail+1)); echo "  FAIL  wrap"; }
+expect block bash "$(b '"ps eww -p 1 | head"')"
+expect block bash "$(b '"ps -E | head"')"
+
 echo "passed: $pass  failed: $fail  known gaps: $known"
 [ $fail -eq 0 ]

@@ -3,6 +3,19 @@
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions: [Semantic Versioning](https://semver.org/). Release notes and downloadable assets: [GitHub Releases](https://github.com/lucas-saldanha-werneck/op-secrets/releases).
 
+## [0.7.2] - 2026-11-19
+
+### Changed
+- Process listings that print command lines (`pgrep -fl`, `ps aux`, `ps -ef`, `ps -o command`) are allowed again, but the
+  guard rewrites the command so its output passes through a redactor: each line is cut at the first `NAME=value` token and
+  replaced by `[env hidden]`. A process that rewrites its title (npm exec, node `process.title`) shows its environment
+  there. Still blocked: `ps e`, `ps axe`, `ps -E`, `ps eww`. The rewritten command keeps the exit status (pipefail).
+- A recursive search for a key name is allowed when every target is a named source folder (`src`, `lib`, `docs`,
+  `server`, `bin`, ...) and no `.env*` path is named. Searches over `.`, `~`, `/` or an `.env` path stay blocked.
+
+### Fixed
+- `${NAME:+set}` (a set-test that prints a fixed word, never the value) is no longer treated as echoing a secret variable.
+
 ## [0.7.1] - 2026-11-18
 
 ### Fixed

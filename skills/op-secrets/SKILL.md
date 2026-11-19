@@ -9,7 +9,7 @@ description: >
   dialog with an eye/reveal toggle, straight into 1Password), `op-env` (launch any command with
   secrets injected, TTY preserved, one biometric prompt) and `secret-dialog`. Not for other
   password managers.
-version: "0.7.1"
+version: "0.7.2"
 metadata:
   author: Lucas Saldanha Werneck <lucas@2olhares.com>
   tags: [1password, secrets, security, op, credentials]
