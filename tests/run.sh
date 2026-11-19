@@ -756,7 +756,7 @@ else pass=$((pass+1)); echo "  ok    setup recipes feed the token to security th
 if grep -q 'read_items,write_items' "$HERE/bin/op-env"; then pass=$((pass+1)); echo "  ok    op-env recipe grants write_items"; else fail=$((fail+1)); echo "  FAIL  op-env recipe is read-only"; fi
 
 echo
-echo "v0.7.2 process listings: allowed, but the output is redacted (title-rewriting processes show their env)"
+echo "v0.7.2+ process listings: allowed, but the output is redacted (title-rewriting processes show their env)"
 rewrite() { printf '%s' "$(b "\"$1\"")" | "$PY" "$G" bash | "$PY" -c 'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"]["updatedInput"]["command"])'; }
 if command -v node >/dev/null 2>&1; then
   # dummy values only: the child gets a minimal environment, never the real one
@@ -782,6 +782,29 @@ else
 fi
 cmd=$(rewrite "pgrep -fl nothing-here-xy[z] | head -3"); bash -c "$cmd" >/dev/null 2>&1; rc=$?
 if [ $rc -ne 0 ]; then pass=$((pass+1)); echo "  ok    exit status kept (pgrep found nothing: $rc)"; else fail=$((fail+1)); echo "  FAIL  exit status lost"; fi
+# secrets passed as flags, headers, user:pass and URL credentials are hidden; ordinary args are kept
+redact_line() { cmd=$(rewrite "pgrep -fl nothing-here-xy[z]; cat"); printf '%s\n' "$1" | bash -c "$cmd" 2>/dev/null; }
+check_hidden() { out=$(redact_line "$1"); if printf '%s' "$out" | grep -qE 'SEKRIT99|ab1x'; then fail=$((fail+1)); echo "  FAIL  secret leaked: $out"; else pass=$((pass+1)); echo "  ok    hidden: $out"; fi; }
+check_kept() { out=$(redact_line "$1"); if [ "$out" = "$1" ]; then pass=$((pass+1)); echo "  ok    kept: $out"; else fail=$((fail+1)); echo "  FAIL  arg hidden by mistake: $out"; fi; }
+check_hidden 'npm exec x --token SEKRIT99'
+check_hidden 'x --api-key=SEKRIT99 y'
+check_hidden 'curl -H Authorization: Bearer SEKRIT99'
+check_hidden 'curl -H Authorization: Bearer ab1x'
+check_hidden 'curl -H X-Api-Key: SEKRIT99 https://x'
+check_hidden 'curl -H PRIVATE-TOKEN: SEKRIT99'
+check_hidden 'curl -ubob:SEKRIT99'
+check_hidden 'curl --user=bob:SEKRIT99'
+check_hidden 'curl -u bob:SEKRIT99'
+check_hidden 'git clone https://bob:SEKRIT99@host/x'
+check_hidden 'x --CREDENTIAL SEKRIT99'
+check_hidden 'x  --token  SEKRIT99'
+check_hidden 'x --client-secret SEKRIT99 --v'
+check_hidden 'x --password=SEKRIT99'
+check_hidden 'node app FOO_KEY=SEKRIT99'
+check_kept '/usr/bin/op-secrets-guard --verbose /tmp/file'
+check_kept 'node --author lucas --passive mode'
+check_kept 'python3 /x/Claude-1Password/hooks/guard.py bash'
+check_kept 'npm exec rtest --keep-going'
 cmd=$(rewrite "echo pid; pgrep -fl nothing-here-xyz")
 printf '%s' "$cmd" | grep -q 'env hidden' && { pass=$((pass+1)); echo "  ok    command wrapped, original kept"; } || { fail=$((fail+1)); echo "  FAIL  wrap"; }
 expect block bash "$(b '"ps eww -p 1 | head"')"

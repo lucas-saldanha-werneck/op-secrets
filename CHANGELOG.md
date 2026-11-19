@@ -3,6 +3,15 @@
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions: [Semantic Versioning](https://semver.org/). Release notes and downloadable assets: [GitHub Releases](https://github.com/lucas-saldanha-werneck/op-secrets/releases).
 
+## [0.7.3] - 2026-11-19
+
+### Fixed
+- The process-listing redactor now also hides secrets that are not `NAME=value`: values of flags whose name has token,
+  key, secret, pass, password, auth or credential (`--token x`, `--api-key=x`, any case), header values (`X-Api-Key: x`,
+  `PRIVATE-TOKEN: x`, `Bearer x`, `Basic x`), `-u user:pass` / `-uuser:pass` / `--user=user:pass`, and URL credentials
+  (`https://user:pass@host`). Before, `pgrep -fl` showed a `--token` value in full. Flags like `--author` or
+  `--passive` and paths like `op-secrets-guard` are left alone. A value with spaces is hidden only up to the first space.
+
 ## [0.7.2] - 2026-11-19
 
 ### Changed

@@ -580,13 +580,30 @@ def proc_prints_cmdline(c, args):
 
 # Command lines are allowed but redacted: a process that rewrites its title (npm exec, node process.title) shows its real
 # environment after the arguments. The guard wraps the command so every output line is cut at the first NAME=value token.
+# Secrets passed as flags or headers are hidden first, so the args before the environment stay readable. ERE + the I flag
+# work the same on macOS and GNU sed. A keyword must end the flag name or be followed by - or _ (--token-file yes, --author
+# no), and the flag must start a word, so paths like op-secrets-guard are left alone.
+_KW = r"(token|key|secret|pass(word|wd)?|auth(orization)?|credentials?)"
+REDACT_SECRET_SEDS = (
+    # URL credentials: https://user:pass@host
+    r"s/(:\/\/)[^\/@[:space:]]+:[^\/@[:space:]]+@/\1[hidden]@/g",
+    # -u user:pass, -uuser:pass, --user=user:pass
+    r"s/(^|[[:space:]])(-u|--user)(=|[[:space:]]*)[^[:space:]:]+:[^[:space:]]+/\1\2\3[hidden]/g",
+    # Authorization: Bearer x / Basic x
+    r"s/(bearer|basic)[[:space:]]+[^[:space:]]+/\1 [hidden]/Ig",
+    # --token x, --api-key=x, -p:x
+    r"s/(^|[[:space:]])(--?[a-z0-9_-]*" + _KW + r"([_-][a-z0-9_-]*)?)([[:space:]]+|=|:[[:space:]]*)[^[:space:]]+/\1\2\7[hidden]/Ig",
+    # header form: X-Api-Key: x, PRIVATE-TOKEN: x
+    r"s/(^|[[:space:]])([a-z0-9_-]*" + _KW + r"([_-][a-z0-9_-]*)?):[[:space:]]*[^[:space:]]+/\1\2: [hidden]/Ig",
+)
 REDACT_SED = "s/[[:space:]][A-Za-z_][A-Za-z0-9_]*=.*$/ [env hidden]/"
 REDACT_MARK = "[env hidden]"
 
 
 def redact_wrap(cmd: str) -> str:
     """The whole command, run so that its output passes through the redactor (pipefail keeps the exit status)."""
-    return "( set -o pipefail; { %s\n} | sed '%s' )" % (cmd, REDACT_SED)
+    exprs = " ".join("-e '%s'" % e for e in REDACT_SECRET_SEDS + (REDACT_SED,))
+    return "( set -o pipefail; { %s\n} | sed -E %s )" % (cmd, exprs)
 
 
 def ev_bash(d):
