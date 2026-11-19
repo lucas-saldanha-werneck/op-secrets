@@ -782,6 +782,26 @@ else
 fi
 cmd=$(rewrite "pgrep -fl nothing-here-xy[z] | head -3"); bash -c "$cmd" >/dev/null 2>&1; rc=$?
 if [ $rc -ne 0 ]; then pass=$((pass+1)); echo "  ok    exit status kept (pgrep found nothing: $rc)"; else fail=$((fail+1)); echo "  FAIL  exit status lost"; fi
+cmd=$(rewrite "pgrep -fl nothing-here-xy[z]; echo 'npm exec x --token dummy777'")
+red=$(bash -c "$cmd" 2>&1)
+if printf '%s' "$red" | grep -q dummy777; then fail=$((fail+1)); echo "  FAIL  flag secret leaked: $red"
+elif printf '%s' "$red" | grep -qF -- "--token [hidden]"; then pass=$((pass+1)); echo "  ok    flag secret hidden: --token [hidden]"
+else fail=$((fail+1)); echo "  FAIL  flag redactor output unexpected: $red"; fi
+cmd=$(rewrite "pgrep -fl nothing-here-xy[z]; echo 'npm exec x --api-key=dummy777'")
+red=$(bash -c "$cmd" 2>&1)
+if printf '%s' "$red" | grep -q dummy777; then fail=$((fail+1)); echo "  FAIL  flag secret leaked: $red"
+elif printf '%s' "$red" | grep -qF -- "--api-key=[hidden]"; then pass=$((pass+1)); echo "  ok    flag secret hidden: --api-key=[hidden]"
+else fail=$((fail+1)); echo "  FAIL  flag redactor output unexpected: $red"; fi
+cmd=$(rewrite "pgrep -fl nothing-here-xy[z]; echo 'npm exec x Authorization: Bearer dummy7777777'")
+red=$(bash -c "$cmd" 2>&1)
+if printf '%s' "$red" | grep -q dummy777; then fail=$((fail+1)); echo "  FAIL  flag secret leaked: $red"
+elif printf '%s' "$red" | grep -qF -- "Bearer [hidden]"; then pass=$((pass+1)); echo "  ok    flag secret hidden: Bearer [hidden]"
+else fail=$((fail+1)); echo "  FAIL  flag redactor output unexpected: $red"; fi
+cmd=$(rewrite "pgrep -fl nothing-here-xy[z]; echo 'npm exec x -u bob:dummy777'")
+red=$(bash -c "$cmd" 2>&1)
+if printf '%s' "$red" | grep -q dummy777; then fail=$((fail+1)); echo "  FAIL  flag secret leaked: $red"
+elif printf '%s' "$red" | grep -qF -- "-u [hidden]"; then pass=$((pass+1)); echo "  ok    flag secret hidden: -u [hidden]"
+else fail=$((fail+1)); echo "  FAIL  flag redactor output unexpected: $red"; fi
 cmd=$(rewrite "echo pid; pgrep -fl nothing-here-xyz")
 printf '%s' "$cmd" | grep -q 'env hidden' && { pass=$((pass+1)); echo "  ok    command wrapped, original kept"; } || { fail=$((fail+1)); echo "  FAIL  wrap"; }
 expect block bash "$(b '"ps eww -p 1 | head"')"

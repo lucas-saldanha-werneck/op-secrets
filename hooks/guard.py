@@ -580,13 +580,20 @@ def proc_prints_cmdline(c, args):
 
 # Command lines are allowed but redacted: a process that rewrites its title (npm exec, node process.title) shows its real
 # environment after the arguments. The guard wraps the command so every output line is cut at the first NAME=value token.
+# Secrets passed as flags (--token xyz, --api-key=xyz, -H "Authorization: Bearer xyz", -u user:pass) are hidden first,
+# so the args before the environment stay readable. ERE (sed -E) works the same on macOS and GNU sed.
+REDACT_FLAG_SED = (r"s/(--?[A-Za-z0-9_-]*([Tt]oken|TOKEN|[Kk]ey|KEY|[Ss]ecret|SECRET|[Pp]ass(word|wd)?|PASS(WORD)?"
+                   r"|[Aa]uth|AUTH|[Cc]redential)[A-Za-z0-9_-]*)([ =])[^ ]+/\1\5[hidden]/g")
+REDACT_BEARER_SED = r"s/([Bb]earer|[Bb]asic|[Tt]oken) [A-Za-z0-9._~+\/=-]{8,}/\1 [hidden]/g"
+REDACT_USERPASS_SED = r"s/(-u|--user) [^ :]+:[^ ]+/\1 [hidden]/g"
 REDACT_SED = "s/[[:space:]][A-Za-z_][A-Za-z0-9_]*=.*$/ [env hidden]/"
 REDACT_MARK = "[env hidden]"
 
 
 def redact_wrap(cmd: str) -> str:
     """The whole command, run so that its output passes through the redactor (pipefail keeps the exit status)."""
-    return "( set -o pipefail; { %s\n} | sed '%s' )" % (cmd, REDACT_SED)
+    exprs = " ".join("-e '%s'" % e for e in (REDACT_FLAG_SED, REDACT_BEARER_SED, REDACT_USERPASS_SED, REDACT_SED))
+    return "( set -o pipefail; { %s\n} | sed -E %s )" % (cmd, exprs)
 
 
 def ev_bash(d):
