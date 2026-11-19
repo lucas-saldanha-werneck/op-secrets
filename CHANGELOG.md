@@ -6,9 +6,11 @@ Versions: [Semantic Versioning](https://semver.org/). Release notes and download
 ## [0.7.3] - 2026-11-19
 
 ### Fixed
-- The process-listing redactor now also hides secrets passed as flags: `--token xyz`, `--api-key=xyz` (any flag whose
-  name has token, key, secret, pass, auth or credential), `Bearer`/`Basic` header values, and `-u user:pass`. Before,
-  only `NAME=value` tokens were cut, so `pgrep -fl` showed a `--token` value in full.
+- The process-listing redactor now also hides secrets that are not `NAME=value`: values of flags whose name has token,
+  key, secret, pass, password, auth or credential (`--token x`, `--api-key=x`, any case), header values (`X-Api-Key: x`,
+  `PRIVATE-TOKEN: x`, `Bearer x`, `Basic x`), `-u user:pass` / `-uuser:pass` / `--user=user:pass`, and URL credentials
+  (`https://user:pass@host`). Before, `pgrep -fl` showed a `--token` value in full. Flags like `--author` or
+  `--passive` and paths like `op-secrets-guard` are left alone. A value with spaces is hidden only up to the first space.
 
 ## [0.7.2] - 2026-11-19
 
